@@ -605,11 +605,13 @@ function renderCharts() {
     const countryCounts = {};
     enrolled.forEach(s => {
         const c = (s.warganegara || 'MALAYSIA').toUpperCase();
+        if (c === 'MALAYSIA') return;
         if(!countryCounts[c]) countryCounts[c] = { m:0, p:0, t:0 };
         if(isPhD(s.program)) countryCounts[c].p++; else countryCounts[c].m++;
         countryCounts[c].t++;
     });
     const sortedCountries = Object.entries(countryCounts).sort((a,b) => b[1].t - a[1].t).slice(0, 20);
+    const maxTotal = Math.max(...sortedCountries.map(x => x[1].t), 1);
     const ctxCountry = document.getElementById('countryChart')?.getContext('2d');
     if (ctxCountry) {
         if (charts.country) charts.country.destroy();
@@ -622,7 +624,7 @@ function renderCharts() {
                     { label: 'PhD', data: sortedCountries.map(x => x[1].p), backgroundColor: '#8b5cf6', borderRadius: 4, datalabels: { labels: { title: { anchor: 'end', align: 'left', color: '#fff', font: { weight: 'bold', size: 10 }, formatter: v => v > 0 ? v : '' }, total: { anchor: 'end', align: 'right', offset: 6, color: '#1e293b', textStrokeColor: '#ffffff', textStrokeWidth: 3, font: { weight: '900', size: 11 }, formatter: (v, ctx) => { const m = ctx.chart.data.datasets[0].data[ctx.dataIndex]; return (m + v) > 0 ? (m + v) : ''; } } } } }
                 ] 
             },
-            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true, beginAtZero: true }, y: { stacked: true, ticks: { font: { size: 10, weight: '600' } } } } } });
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true, beginAtZero: true, suggestedMax: maxTotal * 1.15 }, y: { stacked: true, ticks: { font: { size: 10, weight: '600' } } } } } });
     }
 
     const facultyCounts = {};
@@ -834,7 +836,7 @@ function render() {
                     <div class="chart-card"><h3>📈 DENOMINASI PROGRAM</h3><div class="chart-container"><canvas id="programChart"></canvas></div></div>
                 </div>
 
-                <div class="charts-row"><div class="chart-card" style="grid-column: span 2;"><h3>🌍 WARGANEGARA (Top 20)</h3><div class="chart-container" style="height:500px"><canvas id="countryChart"></canvas></div></div></div>
+                <div class="charts-row"><div class="chart-card" style="grid-column: span 2;"><h3>🌍 WARGANEGARA LUAR (20 TERTINGGI)</h3><div class="chart-container" style="height:500px"><canvas id="countryChart"></canvas></div></div></div>
                 <div class="charts-row"><div class="chart-card" style="grid-column: span 2;"><h3>🏛️ FAKULTI</h3><div class="chart-container" style="height:450px"><canvas id="facultyChart"></canvas></div></div></div>
                 
                 <div class="charts-row">
