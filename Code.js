@@ -30,19 +30,15 @@ function getStats() {
 /**
  * Sets up the database ID if not already configured.
  */
-function ensureDatabaseSetup() {
-  const existing = PropertiesService.getScriptProperties().getProperty('DB_ID');
-  if (!existing) {
-    PropertiesService.getScriptProperties().setProperty('DB_ID', '1knHUuDCGZPuMkkuBxpakYv_z2Ozh2TQtXPLpjUIm6Aw');
-  }
-}
-
 /**
  * Setup endpoint: Visit ?setup to initialize the database connection.
  */
 function doGet(e) {
   if (e && e.parameter) {
     if (e.parameter.setup === '1') {
+      if (e.parameter.dbId) {
+        PropertiesService.getScriptProperties().setProperty('DB_ID', e.parameter.dbId);
+      }
       return HtmlService.createHtmlOutput(
         '<h3>Setup...</h3><pre>' +
         runSetup() +
@@ -84,8 +80,6 @@ function doGet(e) {
   }
   template.userRole = role;
   
-  ensureDatabaseSetup();
-  
   return template.evaluate()
       .setTitle('Dashboard Status Calon Siswazah PPS')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -94,7 +88,6 @@ function doGet(e) {
 
 function runSetup() {
   try {
-    ensureDatabaseSetup();
     const dbId = PropertiesService.getScriptProperties().getProperty('DB_ID');
     let result = 'DB_ID: ' + dbId + '\n';
     if (dbId) {
