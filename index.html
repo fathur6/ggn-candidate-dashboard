@@ -164,38 +164,32 @@
     const USER_EMAIL = rawUserEmail;
     const APPS_SCRIPT_URL = rawAppUrl;
 
-    function b64decode(str) {
-        const binary = atob(str);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return new TextDecoder().decode(bytes);
-    }
-
-    let embeddedChunk = null;
-    const b64 = "<?!= typeof embeddedChunk !== 'undefined' ? embeddedChunk : '' ?>";
-    if (b64 && b64.indexOf('<'+'?') === -1) {
-        try { embeddedChunk = JSON.parse(b64decode(b64)); } catch(e) { console.error('Decode error:', e); }
-    }
-
     window.onload = () => {
         if (USER_ROLE === 'unauthorized') {
             document.getElementById('unauthorizedOverlay').style.display = 'flex';
             document.getElementById('loadingOverlay').style.display = 'none';
         } else {
-            if (embeddedChunk && embeddedChunk.success) {
-                students = embeddedChunk.data || [];
-                lastUpdated = embeddedChunk.lastUpdated ? new Date(embeddedChunk.lastUpdated) : new Date();
-                try { localStorage.setItem('pps_students', JSON.stringify(students)); } catch(e) {}
-                isLoadingData = false;
-                document.getElementById('loadingOverlay').style.display = 'none';
-                render();
-                setTimeout(() => location.reload(), 300000);
-            } else {
-                dataFetchError = embeddedChunk ? embeddedChunk.error : 'Tiada data tersedia.';
-                isLoadingData = false;
-                document.getElementById('loadingOverlay').style.display = 'none';
-                render();
-            }
+            google.script.run
+                .withSuccessHandler(result => {
+                    if (result && result.success) {
+                        students = result.data || [];
+                        lastUpdated = result.lastUpdated ? new Date(result.lastUpdated) : new Date();
+                        try { localStorage.setItem('pps_students', JSON.stringify(students)); } catch(e) {}
+                    } else {
+                        dataFetchError = result ? 'Ralat: ' + result.error : 'Ralat memuat data.';
+                    }
+                    isLoadingData = false;
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                    render();
+                    setTimeout(() => location.reload(), 300000);
+                })
+                .withFailureHandler(err => {
+                    dataFetchError = 'Ralat Kod Pelayan: ' + (err.message || err);
+                    isLoadingData = false;
+                    document.getElementById('loadingOverlay').style.display = 'none';
+                    render();
+                })
+                .getStudents();
         }
     };
 </script>
@@ -346,7 +340,26 @@ window.addNewAdmin = function() {
 // --- DATA FETCHING ---
 
 function fetchDataFromSheet() {
-    location.reload();
+    isLoadingData = true; dataFetchError = null; students = [];
+    render();
+    google.script.run
+        .withSuccessHandler(result => {
+            if (result && result.success) {
+                students = result.data || [];
+                lastUpdated = result.lastUpdated ? new Date(result.lastUpdated) : new Date();
+                try { localStorage.setItem('pps_students', JSON.stringify(students)); } catch(e) {}
+            } else {
+                dataFetchError = result ? 'Ralat: ' + result.error : 'Ralat memuat data.';
+            }
+            isLoadingData = false;
+            render();
+        })
+        .withFailureHandler(err => {
+            dataFetchError = 'Ralat Kod Pelayan: ' + (err.message || err);
+            isLoadingData = false;
+            render();
+        })
+        .getStudents();
 }
 
 function getDynamicOptions(key) {
