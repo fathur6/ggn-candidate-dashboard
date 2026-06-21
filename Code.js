@@ -80,6 +80,14 @@ function doGet(e) {
   }
   template.userRole = role;
   
+  // Embed data directly in HTML (google.script.run is broken, JSONP has SameSite issues)
+  try {
+    const allData = getStudents();
+    template.embeddedChunk = Utilities.base64Encode(JSON.stringify(allData));
+  } catch (err) {
+    template.embeddedChunk = Utilities.base64Encode(JSON.stringify({ success: false, error: err.toString() }));
+  }
+  
   return template.evaluate()
       .setTitle('Dashboard Status Calon Siswazah PPS')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
