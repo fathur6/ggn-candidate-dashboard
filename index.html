@@ -29,11 +29,23 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .loading-text { font-size: 13px; color: rgba(255,255,255,0.5); font-weight: 400; letter-spacing: 0.5px; }
         .loading-subtitle { font-size: 11px; color: rgba(255,255,255,0.25); font-weight: 300; margin-top: -8px; letter-spacing: 1px; text-transform: uppercase; }
+        .loading-bar-track { width: 220px; height: 5px; background: rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; margin-top: -8px; }
+        .loading-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #fbbf24, #f59e0b); border-radius: 4px; transition: width 0.5s linear; }
         .fade-in { animation: fadeIn 0.2s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
-        .dashboard-wrapper { position: relative; min-height: 100vh; background-color: #f9fafb; background-image: url('https://www.transparenttextures.com/patterns/cubes.png'); padding-bottom: 64px; }
-        .dashboard { max-width: 1250px; margin: 0 auto; padding: 24px; }
+        .dashboard-wrapper { display: flex; gap: 0; min-height: 100vh; background-color: #f9fafb; background-image: url('https://www.transparenttextures.com/patterns/cubes.png'); padding-bottom: 64px; }
+        .sidebar { width: 220px; flex-shrink: 0; background: white; border-radius: 0 16px 16px 0; padding: 20px 12px; position: sticky; top: 24px; height: fit-content; border: 1px solid #e2e8f0; border-left: none; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin: 24px 0 0; }
+        .sidebar-brand { padding: 0 8px 16px; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+        .sidebar-brand-text { font-weight: 800; font-size: 13px; color: #1e293b; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.5px; display: block; }
+        .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; color: #475569; text-decoration: none; font-size: 12px; font-weight: 600; transition: 0.15s; cursor: pointer; }
+        .nav-item:hover { background: #f1f5f9; color: #1e293b; }
+        .nav-item.active { background: #2563eb; color: white; }
+        .nav-item .nav-icon { width: 18px; text-align: center; font-size: 14px; flex-shrink: 0; }
+        .sidebar-footer { padding: 12px 8px 0; border-top: 1px solid #e2e8f0; margin-top: 12px; font-size: 10px; color: #94a3b8; text-align: center; }
+        .dashboard { flex: 1; min-width: 0; max-width: 100%; padding: 24px 32px; }
+        @media (max-width: 900px) { .dashboard-wrapper { flex-direction: column; } .sidebar { width: 100%; position: relative; top: 0; border-radius: 0; margin: 0; border-left: 1px solid #e2e8f0; } .sidebar-nav { flex-direction: row; overflow-x: auto; } .nav-item { white-space: nowrap; } }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 20px; }
         .last-updated-text { font-size: 11px; color: #64748b; font-weight: 500; font-style: italic; text-align: right; }
         
@@ -105,7 +117,8 @@
 <div id="loadingOverlay" class="loading-overlay">
     <img class="loading-logo" src="https://i.postimg.cc/L6bJj0H1/GS-logo-color-cropped.png" alt="Universiti Sultan Zainal Abidin">
     <div class="loading-spinner"></div>
-    <div class="loading-text">Memuatkan data...</div>
+    <div class="loading-bar-track"><div class="loading-bar-fill" id="loadingBarFill"></div></div>
+    <div class="loading-text">Penyegerakan data dari pelayan...</div>
     <div class="loading-subtitle">Pusat Pengajian Siswazah</div>
 </div>
 
@@ -177,6 +190,38 @@
         try { embeddedChunk = JSON.parse(b64decode(b64)); } catch(e) { console.error('Decode error:', e); }
     }
 
+    const MIN_LOADING_MS = 5000;
+    let _loadingStartTime = 0;
+    let _loadingBarRAF = 0;
+
+    function startLoadingBar() {
+        const bar = document.getElementById('loadingBarFill');
+        if (!bar) return;
+        _loadingStartTime = Date.now();
+        if (_loadingBarRAF) cancelAnimationFrame(_loadingBarRAF);
+        bar.style.width = '0%';
+        function update() {
+            const elapsed = Date.now() - _loadingStartTime;
+            const pct = Math.min(100, (elapsed / MIN_LOADING_MS) * 100);
+            bar.style.width = pct + '%';
+            if (elapsed < MIN_LOADING_MS) _loadingBarRAF = requestAnimationFrame(update);
+        }
+        _loadingBarRAF = requestAnimationFrame(update);
+    }
+
+    function hideLoadingOverlay() {
+        const elapsed = Date.now() - _loadingStartTime;
+        const remaining = Math.max(0, MIN_LOADING_MS - elapsed);
+        const doHide = () => {
+            const el = document.getElementById('loadingOverlay');
+            if (el) el.style.display = 'none';
+        };
+        if (remaining > 0) setTimeout(doHide, remaining);
+        else doHide();
+    }
+
+    startLoadingBar();
+
     window.onload = () => {
         if (USER_ROLE === 'unauthorized') {
             document.getElementById('unauthorizedOverlay').style.display = 'flex';
@@ -187,14 +232,17 @@
                 lastUpdated = embeddedChunk.lastUpdated ? new Date(embeddedChunk.lastUpdated) : new Date();
                 try { localStorage.setItem('pps_students', JSON.stringify(students)); } catch(e) {}
                 isLoadingData = false;
-                document.getElementById('loadingOverlay').style.display = 'none';
-                render();
-                setTimeout(() => location.reload(), 300000);
+                setTimeout(() => {
+                    hideLoadingOverlay();
+                    try { render(); } catch(e) { document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:#e11d48"><h2>Ralat Paparan</h2><p style="color:#475569">' + e.message + '</p><button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">Muat Semula</button></div>'; }
+                }, 100);
             } else {
                 dataFetchError = embeddedChunk ? 'Ralat: ' + (embeddedChunk.error || 'Gagal memuat data') : 'Tiada data tersedia.';
                 isLoadingData = false;
-                document.getElementById('loadingOverlay').style.display = 'none';
-                render();
+                setTimeout(() => {
+                    hideLoadingOverlay();
+                    try { render(); } catch(e) { document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:#e11d48"><h2>Ralat Paparan</h2><p style="color:#475569">' + e.message + '</p><button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">Muat Semula</button></div>'; }
+                }, 100);
             }
         }
     };
@@ -209,6 +257,7 @@ let students = [];
 let searchTerm = '';
 let filterSesi = '';
 let filterStatus = 'ENROLMENT'; 
+let regRange = 'all';
 let charts = {};
 let lastUpdated = null;
 let editIndex = null;
@@ -236,9 +285,28 @@ const facultyMap = {
     "FACULTY OF INOVATIVE DESIGN AND TECHNOLOGY": "FRIT",
     "RESEARCH INSTITUTE FOR ISLAMIC PRODUCTS AND MALAY CIVILIZATION": "INSPIRE",
     "FACULTY OF PHARMACY": "FF",
+    "FACULTY OF VETERINARY MEDICINE": "FPV",
     "EAST COAST ENVIRONMENTAL RESEARCH INSTITUTE": "ESERI",
     "FACULTY OF GENERAL STUDIES AND ADVANCED EDUCATION": "FUPL",
     "CENTRE FOR CAREER, TECHNOPRENEURSHIP AND SMART NETWORKING": "FIK" 
+};
+
+const facultyFullNameBM = {
+    "FKI": "Fakulti Pengajian Kontemporari Islam",
+    "FPP": "Fakulti Pengurusan dan Perniagaan",
+    "FBK": "Fakulti Bahasa dan Komunikasi",
+    "FIK": "Fakulti Informatik dan Komputeran",
+    "FP": "Fakulti Perubatan",
+    "FSSG": "Fakulti Sains Sosial Gunaan",
+    "FSK": "Fakulti Sains Kesihatan",
+    "FRIT": "Fakulti Rekabentuk Inovatif dan Teknologi",
+    "FBIM": "Fakulti Biosumber dan Industri Makanan",
+    "FUHA": "Fakulti Undang-Undang dan Hubungan Antarabangsa",
+    "FF": "Fakulti Farmasi",
+    "FPV": "Fakulti Perubatan Veterinar",
+    "FUPL": "Fakulti Pengajian Umum dan Pendidikan Lanjutan",
+    "INSPIRE": "Institut Penyelidikan Produk Islam dan Ketamadunan Melayu",
+    "ESERI": "Institut Penyelidikan Alam Sekitar Pantai Timur"
 };
 
 function formatFacultyName(str) {
@@ -345,10 +413,6 @@ window.addNewAdmin = function() {
 
 // --- DATA FETCHING ---
 
-function fetchDataFromSheet() {
-    location.reload();
-}
-
 function getDynamicOptions(key) {
     if (students.length === 0) return [];
     const values = [...new Set(students.map(s => s[key]).filter(Boolean))];
@@ -360,8 +424,11 @@ function getDynamicOptions(key) {
 
 function kiraTempohPengajian(dateStr) {
     if (!dateStr) return '-';
+    dateStr = String(dateStr).trim();
     let tarikhMula;
-    if (dateStr.includes('/')) {
+    if (/^\d+$/.test(dateStr) && parseInt(dateStr) > 30000) {
+        tarikhMula = new Date((parseInt(dateStr) - 25569) * 86400 * 1000);
+    } else if (dateStr.includes('/')) {
         const parts = dateStr.split('/');
         if (parts[0].length <= 2 && parts[1].length <= 2 && parts[2].length === 4) {
             tarikhMula = new Date(parts[2], parseInt(parts[1]) - 1, parts[0]);
@@ -494,7 +561,7 @@ async function handleFileUpload(file) {
                         google.script.run
                             .withSuccessHandler(() => {
                                 showNotification(`Berjaya: ${addedCount} baru, ${updatedCount} dikemaskini.`, 'success');
-                                fetchDataFromSheet();
+                                isLoadingData = false; render();
                             })
                             .withFailureHandler(err => {
                                 showNotification('Ralat Pelayan: ' + err.message, 'error');
@@ -521,6 +588,87 @@ async function handleFileUpload(file) {
     reader.readAsArrayBuffer(file);
 }
 
+function parseRegistrationDate(str) {
+    if (!str) return null;
+    str = str.toString().trim();
+    if (/^\d+$/.test(str) && parseInt(str) > 30000) return new Date((parseInt(str) - 25569) * 86400 * 1000);
+    if (str.includes('/')) { const [dd, mm, yy] = str.split('/'); return new Date(parseInt(yy), parseInt(mm) - 1, parseInt(dd)); }
+    if (str.includes('-')) { const p = str.split('-'); if (p.length === 3 && p[0].length === 4) return new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2])); if (p.length === 3 && p[2].length === 4) return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0])); }
+    return new Date(str);
+}
+
+function getSesiList() { const set = new Set(students.map(s => s.sesi).filter(Boolean)); return [...set].sort((a, b) => getSesiScore(a) - getSesiScore(b)); }
+
+function getSesiDateRange(sesi) {
+    const inSesi = students.filter(s => s.sesi === sesi && s.tarikhDaftar);
+    if (inSesi.length === 0) return null;
+    let min = null, max = null;
+    inSesi.forEach(s => { const d = parseRegistrationDate(s.tarikhDaftar); if (!d || isNaN(d.getTime())) return; if (!min || d < min) min = d; if (!max || d > max) max = d; });
+    return min && max ? { start: min, end: max } : null;
+}
+
+function populateRegDropdown() {
+    const sel = document.getElementById('regTimeRange'); if (!sel) return;
+    const list = getSesiList();
+    let opts = '<option value="all">📊 Ringkasan (Bulanan)</option>';
+    list.forEach(sesi => {
+        const range = getSesiDateRange(sesi);
+        const label = range ? (sesi + ' — ' + range.start.toLocaleDateString('ms-MY', {month:'short',year:'numeric'}) + ' → ' + range.end.toLocaleDateString('ms-MY', {month:'short',year:'numeric'})) : sesi;
+        opts += '<option value="' + sesi + '">' + label + '</option>';
+    });
+    sel.innerHTML = opts;
+    if (list.length > 0 && regRange === 'all') regRange = list[list.length - 1];
+    sel.value = regRange;
+}
+
+function onRegRangeChange(value) { regRange = value; renderRegistrationChart(); }
+
+function buildRegistrationChart(canvasId, chartKey, filterFn) {
+    const ctxReg = document.getElementById(canvasId)?.getContext('2d');
+    if (!ctxReg) return;
+    if (charts[chartKey]) charts[chartKey].destroy();
+    const isOverview = regRange === 'all';
+    let filtered = students.filter(s => s.tarikhDaftar && filterFn(s));
+    if (!isOverview) filtered = filtered.filter(s => s.sesi === regRange);
+    const mths = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogos', 'Sep', 'Okt', 'Nov', 'Dis'];
+    let bucketMap = new Map(), bucketFn;
+    if (isOverview) {
+        bucketFn = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    } else {
+        bucketFn = d => { const w = new Date(d); w.setHours(0, 0, 0, 0); w.setDate(w.getDate() - w.getDay()); return w.getFullYear() + '-' + String(w.getMonth() + 1).padStart(2, '0') + '-' + String(w.getDate()).padStart(2, '0'); };
+    }
+    filtered.forEach(s => { const d = parseRegistrationDate(s.tarikhDaftar); if (!d || isNaN(d.getTime())) return; const key = bucketFn(d); if (!bucketMap.has(key)) bucketMap.set(key, { m: 0, p: 0, t: 0 }); const b = bucketMap.get(key); if (isPhD(s.program)) b.p++; else b.m++; b.t++; });
+    const sortedKeys = [...bucketMap.keys()].sort();
+    const labels = [], cumM = [], cumP = [], cumT = [];
+    let tM = 0, tP = 0, tTotal = 0;
+    sortedKeys.forEach(key => {
+        const v = bucketMap.get(key); tM += v.m; tP += v.p; tTotal += v.t;
+        cumM.push(tM); cumP.push(tP); cumT.push(tTotal);
+        if (isOverview) { const [y, m] = key.split('-'); labels.push(mths[parseInt(m) - 1] + ' ' + y.slice(2)); }
+        else { const [y, m, d] = key.split('-'); labels.push(parseInt(d) + ' ' + mths[parseInt(m) - 1] + ' ' + y.slice(2)); }
+    });
+    const dlStyle = function(align){ return { display: function(ctx){return ctx.dataIndex===ctx.dataset.data.length-1;}, anchor:'end', align:align, offset:8, color:'#1e293b', textStrokeColor:'#ffffff', textStrokeWidth:4, font:{weight:'900', size:11}, formatter:function(v){return v.toLocaleString('ms-MY');} }; };
+    charts[chartKey] = new Chart(ctxReg, {
+        type: 'line',
+        data: { labels, datasets: [
+            { label: 'Jumlah (PhD + Sarjana)', data: cumT, borderColor: '#64748b', borderWidth: 2.5, tension: 0.4, fill: false, pointRadius: 0, pointHoverRadius: 6, pointBackgroundColor: '#64748b', pointBorderColor: '#ffffff', pointBorderWidth: 1.5, datalabels: dlStyle('top') },
+            { label: 'Sarjana', data: cumM, borderColor: '#3B66E1', borderWidth: 2.5, tension: 0.4, fill: false, pointRadius: 0, pointHoverRadius: 6, pointBackgroundColor: '#3B66E1', pointBorderColor: '#ffffff', pointBorderWidth: 1.5, datalabels: dlStyle('right') },
+            { label: 'PhD', data: cumP, borderColor: '#8b5cf6', borderWidth: 2.5, tension: 0.4, fill: false, pointRadius: 0, pointHoverRadius: 6, pointBackgroundColor: '#8b5cf6', pointBorderColor: '#ffffff', pointBorderWidth: 1.5, datalabels: dlStyle('bottom') }
+        ] },
+        options: {
+            layout: { padding: { right: 60 } },
+            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom' }, tooltip: { backgroundColor: '#1e293b', padding: 12, cornerRadius: 8, callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('ms-MY') } } },
+            scales: { x: { ticks: { autoSkip: true, maxTicksLimit: isOverview ? 14 : 10, font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.12)' } }, y: { beginAtZero: true, ticks: { font: { size: 11 }, callback: v => v.toLocaleString('ms-MY') }, grid: { color: 'rgba(148,163,184,0.15)' } } }
+        }
+    });
+}
+
+function renderRegistrationChart() {
+    buildRegistrationChart('registrationChart', 'registration', function() { return true; });
+    buildRegistrationChart('registrationIntlChart', 'registrationIntl', function(s) { return isIntl(s.jenis); });
+}
+
 function renderCharts() {
     if (students.length === 0) return;
 
@@ -538,6 +686,9 @@ function renderCharts() {
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: { display: false } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
         });
     }
+
+    populateRegDropdown();
+    renderRegistrationChart();
 
     const phdCount = enrolled.filter(s => isPhD(s.program)).length;
     const masterCount = enrolled.length - phdCount;
@@ -638,6 +789,7 @@ function renderCharts() {
         if(isPhD(s.program)) facultyCounts[f].p++; else facultyCounts[f].m++;
         facultyCounts[f].t++;
     });
+
     const sortedFaculties = Object.entries(facultyCounts).sort((a,b) => b[1].t - a[1].t);
     const ctxFaculty = document.getElementById('facultyChart')?.getContext('2d');
     if (ctxFaculty) {
@@ -716,6 +868,9 @@ function render() {
 
     const enrolled = students.filter(s => s.status==='PA' || s.status==='TP');
     
+    const sesiList = getSesiList();
+    const latestSesi = sesiList.length > 0 ? sesiList[sesiList.length - 1] : null;
+
     const stats = { 
         total: enrolled.length, 
         sarjana: enrolled.filter(s => !isPhD(s.program)).length, 
@@ -725,7 +880,13 @@ function render() {
         local_phd: enrolled.filter(s => !isIntl(s.jenis) && isPhD(s.program)).length,
         intl: enrolled.filter(s => isIntl(s.jenis)).length,
         intl_sarjana: enrolled.filter(s => isIntl(s.jenis) && !isPhD(s.program)).length,
-        intl_phd: enrolled.filter(s => isIntl(s.jenis) && isPhD(s.program)).length
+        intl_phd: enrolled.filter(s => isIntl(s.jenis) && isPhD(s.program)).length,
+        new_local_sarjana: latestSesi ? enrolled.filter(s => !isIntl(s.jenis) && !isPhD(s.program) && s.sesi === latestSesi).length : 0,
+        new_local_phd: latestSesi ? enrolled.filter(s => !isIntl(s.jenis) && isPhD(s.program) && s.sesi === latestSesi).length : 0,
+        new_intl_sarjana: latestSesi ? enrolled.filter(s => isIntl(s.jenis) && !isPhD(s.program) && s.sesi === latestSesi).length : 0,
+        new_intl_phd: latestSesi ? enrolled.filter(s => isIntl(s.jenis) && isPhD(s.program) && s.sesi === latestSesi).length : 0,
+        new_local_total: latestSesi ? enrolled.filter(s => !isIntl(s.jenis) && s.sesi === latestSesi).length : 0,
+        new_intl_total: latestSesi ? enrolled.filter(s => isIntl(s.jenis) && s.sesi === latestSesi).length : 0
     };
 
     const ptaTargets = { "FKI": 150, "FPP": 150, "FBK": 150, "FSSG": 130, "FIK": 150, "FRIT": 120, "FP": 130, "FSK": 120, "FBIM": 130, "FUHA": 120, "FF": 30, "FPV": 30, "FUPL": 30, "INSPIRE": 30, "ESERI": 30 };
@@ -759,7 +920,7 @@ function render() {
         else percentColor = 'text-rose-600 font-bold';
 
         return `<tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-            <td class="px-4 py-3 font-semibold text-slate-800">${f}</td>
+            <td class="px-4 py-3 font-semibold text-slate-800">${facultyFullNameBM[f] || f} (${f})</td>
             <td class="px-4 py-3 text-center text-slate-500">${data.target}</td>
             <td class="px-4 py-3 text-center text-blue-600 font-medium">${data.m}</td>
             <td class="px-4 py-3 text-center text-purple-600 font-medium">${data.p}</td>
@@ -791,6 +952,22 @@ function render() {
 
     app.innerHTML = `
         <div class="dashboard-wrapper">
+            <aside class="sidebar">
+                <div class="sidebar-brand">
+                    <div class="sidebar-brand-text">Navigasi</div>
+                </div>
+                <nav class="sidebar-nav">
+                    <a href="#sec-overview" class="nav-item active"><span class="nav-icon">📊</span><span>Ringkasan</span></a>
+                    <a href="#sec-registration" class="nav-item"><span class="nav-icon">📆</span><span>Tren</span></a>
+                    <a href="#sec-sesi" class="nav-item"><span class="nav-icon">📈</span><span>Demografi</span></a>
+                    <a href="#sec-program" class="nav-item"><span class="nav-icon">🎓</span><span>Program</span></a>
+                    <a href="#sec-country" class="nav-item"><span class="nav-icon">🌍</span><span>Warganegara</span></a>
+                    <a href="#sec-faculty" class="nav-item"><span class="nav-icon">🏛️</span><span>Fakulti</span></a>
+                    <a href="#sec-pta" class="nav-item"><span class="nav-icon">🎯</span><span>Sasaran PTA</span></a>
+                    <a href="#sec-table" class="nav-item"><span class="nav-icon">📋</span><span>Data</span></a>
+                </nav>
+                <div class="sidebar-footer"><i class="fa-regular fa-circle-check"></i> v1.0.0</div>
+            </aside>
             <div class="dashboard">
                 <div class="header">
                     <div class="header-left flex items-center gap-6">
@@ -803,7 +980,6 @@ function render() {
                     <div class="header-right">
                         ${roleBadgeUI}
                         <div class="header-actions mt-2">
-                            <button class="btn btn-primary" onclick="fetchDataFromSheet()"><i class="fa-solid fa-rotate"></i> Sync</button>
                             <button class="btn btn-success" onclick="document.getElementById('reportModal').style.display='flex'"><i class="fa-solid fa-file-pdf"></i> Laporan</button>
                             ${adminActionButtons}
                         </div>
@@ -814,7 +990,7 @@ function render() {
                 ${errorBannerUI}
                 ${loadingBannerUI}
 
-                <div class="stats-row">
+                <div class="stats-row" id="sec-overview">
                     <div class="stat-card flex flex-col items-center justify-center p-8 bg-white rounded-2xl border border-slate-200 shadow-sm text-center">
                         <div class="stat-number text-blue-600 mb-3 text-5xl font-black">${stats.total}</div>
                         <div class="font-bold text-slate-600 text-sm tracking-wide uppercase mb-1">ENROLMEN (PA+TP)</div>
@@ -825,9 +1001,12 @@ function render() {
                         <div class="font-bold text-slate-600 text-xs tracking-wide uppercase mb-1">TEMPATAN</div>
                         <div class="text-xs font-semibold text-slate-400 mb-1">Sarjana: ${stats.local_sarjana} | PhD: ${stats.local_phd}</div>
                         <div class="relative w-full max-w-[180px] h-[130px]"><canvas id="localProgramChart"></canvas></div>
-                        <div class="w-full max-w-[170px] mt-1 text-left">
-                            <div class="flex items-center gap-2 mb-1"><div class="w-2 h-2 rounded-full" style="background:#34d399"></div><span class="text-[10px] font-semibold text-slate-500">Sarjana</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.local_sarjana}</span></div>
-                            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:#059669"></div><span class="text-[10px] font-semibold text-slate-500">PhD</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.local_phd}</span></div>
+                        <div class="w-full mt-1 text-left flex items-center gap-3">
+                            <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1"><div class="w-2 h-2 rounded-full" style="background:#34d399"></div><span class="text-[10px] font-semibold text-slate-500">Sarjana</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.local_sarjana}</span><span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-1">+${stats.new_local_sarjana}</span></div>
+                            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:#059669"></div><span class="text-[10px] font-semibold text-slate-500">PhD</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.local_phd}</span><span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-1">+${stats.new_local_phd}</span></div>
+                            </div>
+                            <div class="flex flex-col items-center justify-center bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-lg px-2.5 py-1.5 shadow-md min-w-[58px] flex-shrink-0"><div class="text-[8px] font-bold uppercase tracking-wider opacity-80 leading-none">Baru</div><div class="text-2xl font-black leading-tight mt-0.5">+${stats.new_local_total}</div></div>
                         </div>
                     </div>
                     <div class="stat-card flex flex-col items-center justify-center p-5 bg-white rounded-2xl border border-slate-200 shadow-sm text-center overflow-visible">
@@ -835,23 +1014,45 @@ function render() {
                         <div class="font-bold text-slate-600 text-xs tracking-wide uppercase mb-1">ANTARABANGSA</div>
                         <div class="text-xs font-semibold text-slate-400 mb-1">Sarjana: ${stats.intl_sarjana} | PhD: ${stats.intl_phd}</div>
                         <div class="relative w-full max-w-[180px] h-[130px]"><canvas id="intlProgramChart"></canvas></div>
-                        <div class="w-full max-w-[170px] mt-1 text-left">
-                            <div class="flex items-center gap-2 mb-1"><div class="w-2 h-2 rounded-full" style="background:#fb7185"></div><span class="text-[10px] font-semibold text-slate-500">Sarjana</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.intl_sarjana}</span></div>
-                            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:#e11d48"></div><span class="text-[10px] font-semibold text-slate-500">PhD</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.intl_phd}</span></div>
+                        <div class="w-full mt-1 text-left flex items-center gap-3">
+                            <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1"><div class="w-2 h-2 rounded-full" style="background:#fb7185"></div><span class="text-[10px] font-semibold text-slate-500">Sarjana</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.intl_sarjana}</span><span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-1">+${stats.new_intl_sarjana}</span></div>
+                            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:#e11d48"></div><span class="text-[10px] font-semibold text-slate-500">PhD</span><span class="text-[10px] font-bold text-slate-700 ml-auto">${stats.intl_phd}</span><span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-1">+${stats.new_intl_phd}</span></div>
+                            </div>
+                            <div class="flex flex-col items-center justify-center bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-lg px-2.5 py-1.5 shadow-md min-w-[58px] flex-shrink-0"><div class="text-[8px] font-bold uppercase tracking-wider opacity-80 leading-none">Baru</div><div class="text-2xl font-black leading-tight mt-0.5">+${stats.new_intl_total}</div></div>
                         </div>
                     </div>
                 </div>
 
-                <div class="charts-row">
-                    <div class="chart-card"><h3>📊 DEMOGRAFI SESI</h3><div class="chart-container"><canvas id="sesiChart"></canvas></div></div>
-                    <div class="chart-card"><h3>📈 DENOMINASI PROGRAM</h3><div class="chart-container"><canvas id="programChart"></canvas></div><div id="programLegend" class="px-2 pb-2"></div></div>
+                <div class="charts-row" id="sec-registration">
+                    <div class="chart-card">
+                        <div class="flex items-center justify-between mb-3 flex-wrap gap-3">
+                            <h3 class="m-0">📈 TREN PENDAFTARAN KUMULATIF</h3>
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Tempoh:</label>
+                                <select id="regTimeRange" class="text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2 cursor-pointer focus:ring-2 focus:ring-blue-500 outline-none" onchange="onRegRangeChange(this.value)"></select>
+                            </div>
+                        </div>
+                        <div class="chart-container" style="height:350px"><canvas id="registrationChart"></canvas></div>
+                    </div>
+                    <div class="chart-card">
+                        <div class="flex items-center justify-between mb-3 flex-wrap gap-3">
+                            <h3 class="m-0">📈 TREN PENDAFTARAN ANTARABANGSA</h3>
+                        </div>
+                        <div class="chart-container" style="height:350px"><canvas id="registrationIntlChart"></canvas></div>
+                    </div>
                 </div>
 
-                <div class="charts-row"><div class="chart-card" style="grid-column: span 2;"><h3>🌍 WARGANEGARA LUAR (20 TERTINGGI)</h3><div class="chart-container" style="height:500px"><canvas id="countryChart"></canvas></div></div></div>
-                <div class="charts-row"><div class="chart-card" style="grid-column: span 2;"><h3>🏛️ FAKULTI</h3><div class="chart-container" style="height:450px"><canvas id="facultyChart"></canvas></div></div></div>
+                <div class="charts-row">
+                    <div class="chart-card" id="sec-sesi"><h3>📊 DEMOGRAFI SESI</h3><div class="chart-container"><canvas id="sesiChart"></canvas></div></div>
+                    <div class="chart-card" id="sec-program"><h3>📈 DENOMINASI PROGRAM</h3><div class="chart-container"><canvas id="programChart"></canvas></div><div id="programLegend" class="px-2 pb-2"></div></div>
+                </div>
+
+                <div class="charts-row"><div class="chart-card" style="grid-column: span 2;" id="sec-country"><h3>🌍 WARGANEGARA LUAR (20 TERTINGGI)</h3><div class="chart-container" style="height:500px"><canvas id="countryChart"></canvas></div></div></div>
+                <div class="charts-row"><div class="chart-card" style="grid-column: span 2;" id="sec-faculty"><h3>🏛️ FAKULTI (TEMPATAN + ANTARABANGSA)</h3><div class="chart-container" style="height:450px"><canvas id="facultyChart"></canvas></div></div></div>
                 
                 <div class="charts-row">
-                    <div class="chart-card" style="grid-column: span 2;">
+                    <div class="chart-card" style="grid-column: span 2;" id="sec-pta">
                         <h3 class="mb-4">🎯 SASARAN PTA SISWAZAH ANTARABANGSA</h3>
                         <div class="chart-container" style="height:550px">
                             <canvas id="ptaChart"></canvas>
@@ -885,7 +1086,7 @@ function render() {
                     </div>
                 </div>
 
-                <h2 class="section-title">Data Spesifik (${filterSesi || 'Semua Sesi'})</h2>
+                <h2 class="section-title" id="sec-table">Data Spesifik (${filterSesi || 'Semua Sesi'})</h2>
                 <div class="filter-bar"><div class="filter-grid">
                     <div class="filter-group"><label class="text-xs font-bold text-slate-400 uppercase mb-1 block">Carian</label><input type="text" id="searchInput" placeholder="Nama / Matrik..." class="w-full p-2 border rounded" value="${searchTerm}" onkeypress="if(event.key==='Enter') {searchTerm=this.value.toLowerCase(); render();}"></div>
                     <div class="filter-group"><label class="text-xs font-bold text-slate-400 uppercase mb-1 block">Sesi</label><select class="w-full p-2 border rounded" onchange="filterSesi=this.value; render();"><option value="">Semua</option>${[...new Set(students.map(s=>s.sesi))].filter(Boolean).sort().map(s=>`<option value="${s}" ${filterSesi===s?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -950,160 +1151,179 @@ function render() {
         </div>
 
         <div id="editModal" class="modal">
-            <div class="modal-content" style="max-width: 700px; padding: 0; background: #ffffff;">
+            <div id="editFormWrap" class="bg-white rounded-2xl w-full max-w-2xl overflow-visible shadow-2xl" style="animation:slideUp 0.2s ease-out;">
                 <div id="editForm"></div>
             </div>
         </div>
     `;
 
     setTimeout(renderCharts, 100);
+    setupSidebarNav();
 }
 
-function openEditModal(idx, mod = 'baca') {
-    if (mod === 'edit' && USER_ROLE !== 'admin') return;
+function openEditModal(target, mod = 'baca') {
+    try {
+        if (mod === 'edit' && USER_ROLE !== 'admin') return;
 
-    editIndex = idx;
-    const s = students[idx];
-    document.getElementById('editModal').style.display = 'flex';
-    
-    const dynamicSesi = getDynamicOptions('sesi');
-    if(s.sesi && !dynamicSesi.includes(s.sesi)) dynamicSesi.push(s.sesi);
+        let idx = -1;
+        if (typeof target === 'number') {
+            idx = target;
+        } else if (typeof target === 'string') {
+            idx = students.findIndex(x => String(x.noMatrik).trim().toLowerCase() === String(target).trim().toLowerCase());
+        }
 
-    const isReadOnly = mod === 'baca';
-    const readOnlyAttr = isReadOnly ? 'disabled' : '';
-    
-    const inputStyle = `w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 text-sm transition-all focus:ring-2 focus:ring-blue-500 disabled:bg-white disabled:text-slate-700 disabled:cursor-default`;
-    const readonlySystemStyle = `w-full p-2.5 bg-slate-100 border border-slate-200 rounded-lg outline-none text-slate-700 text-sm disabled:bg-slate-100 disabled:text-slate-500 cursor-not-allowed`;
-    const selectStyle = `${inputStyle}`;
+        if (idx === -1 || idx >= students.length) {
+            showNotification('Pelajar tidak dijumpai dalam senarai data.', 'error');
+            return;
+        }
 
-    const tempoh = kiraTempohPengajian(s.tarikhDaftar);
+        editIndex = idx;
+        const s = students[idx];
+        document.getElementById('editModal').style.display = 'flex';
+        
+        const dynamicSesi = getDynamicOptions('sesi');
+        if(s.sesi && !dynamicSesi.includes(s.sesi)) dynamicSesi.push(s.sesi);
 
-    document.getElementById('editForm').innerHTML = `
-        <div class="p-6 md:p-8 text-left">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    🔍 Butiran Maklumat Pelajar
-                </h3>
-                <button onclick="document.getElementById('editModal').style.display='none'" class="text-slate-400 hover:text-slate-600 transition-colors">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
-            </div>
-            
-            <div class="max-h-[65vh] overflow-y-auto pr-3 custom-scrollbar">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    
-                    <div class="md:col-span-2">
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Pelajar</label>
-                        <input type="text" id="eNama" value="${escapeHtml(s.nama)}" ${readOnlyAttr} class="${inputStyle}">
+        const isReadOnly = mod === 'baca';
+        const readOnlyAttr = isReadOnly ? 'disabled' : '';
+        
+        const inputStyle = `w-full p-2.5 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 text-sm transition-all focus:ring-2 focus:ring-blue-500 disabled:bg-white disabled:text-slate-700 disabled:cursor-default`;
+        const readonlySystemStyle = `w-full p-2.5 bg-slate-100 border border-slate-200 rounded-lg outline-none text-slate-700 text-sm disabled:bg-slate-100 disabled:text-slate-500 cursor-not-allowed`;
+        const selectStyle = `${inputStyle}`;
+
+        const tempoh = kiraTempohPengajian(s.tarikhDaftar);
+
+        document.getElementById('editForm').innerHTML = `
+            <div class="p-6 md:p-8 text-left">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        🔍 Butiran Maklumat Pelajar
+                    </h3>
+                    <button onclick="document.getElementById('editModal').style.display='none'" class="text-slate-400 hover:text-slate-600 transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="max-h-[65vh] overflow-y-auto pr-3 custom-scrollbar">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Pelajar</label>
+                            <input type="text" id="eNama" value="${escapeHtml(s.nama)}" ${readOnlyAttr} class="${inputStyle}">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">No. Matrik</label>
+                            <input type="text" id="eNoMatrik" value="${escapeHtml(s.noMatrik)}" readonly class="${readonlySystemStyle}">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Emel</label>
+                            <input type="email" id="eEmel" value="${escapeHtml(s.emel)}" ${readOnlyAttr} class="${inputStyle}">
+                        </div>
+
+                        <div class="md:col-span-2 mt-2">
+                            <h4 class="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Maklumat Pengajian</h4>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Fakulti</label>
+                            <input type="text" id="eFakulti" value="${escapeHtml(formatFacultyName(s.fakulti))}" ${readOnlyAttr} class="${inputStyle}">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Semester Daftar</label>
+                            <select id="eSesi" ${readOnlyAttr} class="${selectStyle}">
+                                ${dynamicSesi.map(sesi => `<option value="${sesi}" ${s.sesi===sesi?'selected':''}>${sesi}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Peringkat Pengajian</label>
+                            <select id="eProgram" ${readOnlyAttr} class="${selectStyle}">
+                                <option value="Sarjana" ${!isPhD(s.program)?'selected':''}>Sarjana</option>
+                                <option value="PhD" ${isPhD(s.program)?'selected':''}>PhD</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Mod Penyelidikan</label>
+                            <select id="eMod" ${readOnlyAttr} class="${selectStyle}">
+                                <option value="Sepenuh Masa" ${s.mod?.toLowerCase().includes('sepenuh')||s.mod?.toLowerCase().includes('full')?'selected':''}>Sepenuh Masa</option>
+                                <option value="Separuh Masa" ${s.mod?.toLowerCase().includes('separuh')||s.mod?.toLowerCase().includes('part')?'selected':''}>Separuh Masa</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Struktur Penyelidikan</label>
+                            <select id="eStruktur" ${readOnlyAttr} class="${selectStyle}">
+                                <option value="Penyelidikan" ${s.namaProgram?.toLowerCase().includes('penyelidikan')?'selected':''}>Penyelidikan</option>
+                                <option value="Kerja Kursus" ${s.namaProgram?.toLowerCase().includes('kursus')?'selected':''}>Kerja Kursus</option>
+                                <option value="Campuran" ${s.namaProgram?.toLowerCase().includes('campuran')?'selected':''}>Campuran</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Status Pengajian</label>
+                            <select id="eStatus" ${readOnlyAttr} class="${selectStyle}">
+                                ${statusOptions.map(o=>`<option value="${o.value}" ${s.status===o.value?'selected':''}>${o.label}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tarikh Daftar</label>
+                            <input type="text" id="eTarikhDaftar" value="${escapeHtml(s.tarikhDaftar)}" ${readOnlyAttr} class="${inputStyle}" placeholder="Cth: 2015-10-01">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tempoh Pengajian</label>
+                            <input type="text" value="${tempoh}" readonly disabled class="${readonlySystemStyle}">
+                        </div>
+
+                        <div class="md:col-span-2 mt-2">
+                            <h4 class="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Penyeliaan & Kategori</h4>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Penyelia Utama</label>
+                            <input type="text" id="ePenyelia" value="${escapeHtml(s.penyelia)}" ${readOnlyAttr} class="${inputStyle}">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Kategori</label>
+                            <input type="text" id="eKategori" value="${escapeHtml(s.kategori || '')}" ${readOnlyAttr} class="${inputStyle}">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">No. Telefon</label>
+                            <input type="text" id="eNoTelefon" value="${escapeHtml(s.noTelefon || '')}" ${readOnlyAttr} class="${inputStyle}">
+                        </div>
+
                     </div>
-                    
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">No. Matrik</label>
-                        <input type="text" id="eNoMatrik" value="${escapeHtml(s.noMatrik)}" readonly class="${readonlySystemStyle}">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Emel</label>
-                        <input type="email" id="eEmel" value="${escapeHtml(s.emel)}" ${readOnlyAttr} class="${inputStyle}">
-                    </div>
+                </div>
 
-                    <div class="md:col-span-2 mt-2">
-                        <h4 class="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Maklumat Pengajian</h4>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Fakulti</label>
-                        <input type="text" id="eFakulti" value="${escapeHtml(formatFacultyName(s.fakulti))}" ${readOnlyAttr} class="${inputStyle}">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Semester Daftar</label>
-                        <select id="eSesi" ${readOnlyAttr} class="${selectStyle}">
-                            ${dynamicSesi.map(sesi => `<option value="${sesi}" ${s.sesi===sesi?'selected':''}>${sesi}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Peringkat Pengajian</label>
-                        <select id="eProgram" ${readOnlyAttr} class="${selectStyle}">
-                            <option value="Sarjana" ${!isPhD(s.program)?'selected':''}>Sarjana</option>
-                            <option value="PhD" ${isPhD(s.program)?'selected':''}>PhD</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Mod Penyelidikan</label>
-                        <select id="eMod" ${readOnlyAttr} class="${selectStyle}">
-                            <option value="Sepenuh Masa" ${s.mod?.toLowerCase().includes('sepenuh')||s.mod?.toLowerCase().includes('full')?'selected':''}>Sepenuh Masa</option>
-                            <option value="Separuh Masa" ${s.mod?.toLowerCase().includes('separuh')||s.mod?.toLowerCase().includes('part')?'selected':''}>Separuh Masa</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Struktur Penyelidikan</label>
-                        <select id="eStruktur" ${readOnlyAttr} class="${selectStyle}">
-                            <option value="Penyelidikan" ${s.namaProgram?.toLowerCase().includes('penyelidikan')?'selected':''}>Penyelidikan</option>
-                            <option value="Kerja Kursus" ${s.namaProgram?.toLowerCase().includes('kursus')?'selected':''}>Kerja Kursus</option>
-                            <option value="Campuran" ${s.namaProgram?.toLowerCase().includes('campuran')?'selected':''}>Campuran</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Status Pengajian</label>
-                        <select id="eStatus" ${readOnlyAttr} class="${selectStyle}">
-                            ${statusOptions.map(o=>`<option value="${o.value}" ${s.status===o.value?'selected':''}>${o.label}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tarikh Daftar</label>
-                        <input type="text" id="eTarikhDaftar" value="${escapeHtml(s.tarikhDaftar)}" ${readOnlyAttr} class="${inputStyle}" placeholder="Cth: 2015-10-01">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tempoh Pengajian</label>
-                        <input type="text" value="${tempoh}" readonly disabled class="${readonlySystemStyle}">
-                    </div>
-
-                    <div class="md:col-span-2 mt-2">
-                        <h4 class="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Penyeliaan & Kategori</h4>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Penyelia Utama</label>
-                        <input type="text" id="ePenyelia" value="${escapeHtml(s.penyelia)}" ${readOnlyAttr} class="${inputStyle}">
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Kategori</label>
-                        <input type="text" id="eKategori" value="${escapeHtml(s.kategori || '')}" ${readOnlyAttr} class="${inputStyle}">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">No. Telefon</label>
-                        <input type="text" id="eNoTelefon" value="${escapeHtml(s.noTelefon || '')}" ${readOnlyAttr} class="${inputStyle}">
-                    </div>
-
+                <div class="flex gap-3 mt-6 pt-4 border-t border-slate-100 justify-end">
+                    <button class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl transition-colors" onclick="document.getElementById('editModal').style.display='none'">
+                        Tutup
+                    </button>
+                    ${isReadOnly && USER_ROLE === 'admin'
+                        ? `<button class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-xl transition-colors shadow-md flex items-center gap-2" onclick="openEditModal('${s.noMatrik}', 'edit')"><i class="fa-solid fa-pen-to-square"></i> Kemaskini</button>` 
+                        : ''
+                    }
+                    ${!isReadOnly && USER_ROLE === 'admin'
+                        ? `<button id="btnSimpanEdit" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-md flex items-center gap-2" onclick="saveStudent()"><i class="fa-solid fa-floppy-disk"></i> Simpan Pindaan</button>`
+                        : ''
+                    }
                 </div>
             </div>
-
-            <div class="flex gap-3 mt-6 pt-4 border-t border-slate-100 justify-end">
-                <button class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl transition-colors" onclick="document.getElementById('editModal').style.display='none'">
-                    Tutup
-                </button>
-                ${isReadOnly && USER_ROLE === 'admin'
-                    ? `<button class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-xl transition-colors shadow-md flex items-center gap-2" onclick="openEditModal(${idx}, 'edit')"><i class="fa-solid fa-pen-to-square"></i> Kemaskini</button>` 
-                    : ''
-                }
-                ${!isReadOnly && USER_ROLE === 'admin'
-                    ? `<button id="btnSimpanEdit" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors shadow-md flex items-center gap-2" onclick="saveStudent()"><i class="fa-solid fa-floppy-disk"></i> Simpan Pindaan</button>`
-                    : ''
-                }
-            </div>
-        </div>
-    `;
+        `;
+    } catch (err) {
+        console.error("Ralat openEditModal:", err);
+        showNotification("Gagal membuka butiran pelajar: " + err.message, "error");
+        document.getElementById('editModal').style.display = 'none';
+    }
 }
-
+    
 async function saveStudent() {
     if(USER_ROLE !== 'admin') return showNotification('Akses ditolak.', 'error');
     const btn = document.getElementById('btnSimpanEdit');
@@ -1160,8 +1380,32 @@ window.addNewAdmin = addNewAdmin;
 window.openEditModal = openEditModal;
 window.saveStudent = saveStudent;
 window.downloadPDF = downloadPDF;
-window.fetchDataFromSheet = fetchDataFromSheet;
 window.handleFileUpload = handleFileUpload;
+
+function setupSidebarNav() {
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', e => {
+            e.preventDefault();
+            const target = document.querySelector(item.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                item.classList.add('active');
+            }
+        });
+    });
+    if (window._sidebarObserver) window._sidebarObserver.disconnect();
+    window._sidebarObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                document.querySelectorAll('.nav-item').forEach(n => {
+                    n.classList.toggle('active', n.getAttribute('href') === '#' + entry.target.id);
+                });
+            }
+        });
+    }, { rootMargin: '-20% 0px -60% 0px' });
+    document.querySelectorAll('[id^="sec-"]').forEach(s => window._sidebarObserver.observe(s));
+}
 </script>
 </body>
 </html>

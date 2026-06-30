@@ -142,7 +142,16 @@ function getStudents() {
       
       let tarikhDaftar = row[13]; 
       if (tarikhDaftar instanceof Date) {
-        tarikhDaftar = Utilities.formatDate(tarikhDaftar, Session.getScriptTimeZone(), "yyyy-MM-dd");
+        const y = tarikhDaftar.getFullYear();
+        const m = String(tarikhDaftar.getMonth() + 1).padStart(2, '0');
+        const d = String(tarikhDaftar.getDate()).padStart(2, '0');
+        tarikhDaftar = y + '-' + m + '-' + d;
+      } else if (typeof tarikhDaftar === 'number' && tarikhDaftar > 30000) {
+        const dt = new Date((tarikhDaftar - 25569) * 86400 * 1000);
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const d = String(dt.getDate()).padStart(2, '0');
+        tarikhDaftar = y + '-' + m + '-' + d;
       }
 
       let warganegara = row[15] ? row[15].toString().trim().toUpperCase() : 'MALAYSIA'; 
@@ -173,7 +182,16 @@ function getStudents() {
       });
     }
     
-    return { success: true, data: studentsList, lastUpdated: new Date().toISOString() };
+    let dbLastUpdated = new Date().toISOString();
+    if (data.length > 1 && data[1][19]) {
+      const cell = data[1][19];
+      if (cell instanceof Date) {
+        dbLastUpdated = cell.toISOString();
+      } else if (typeof cell === 'string' && cell.trim()) {
+        dbLastUpdated = cell.trim();
+      }
+    }
+    return { success: true, data: studentsList, lastUpdated: dbLastUpdated };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -202,7 +220,16 @@ function getStudentsChunk(start, count) {
       const row = dataRows[i];
       let tarikhDaftar = row[13];
       if (tarikhDaftar instanceof Date) {
-        tarikhDaftar = Utilities.formatDate(tarikhDaftar, Session.getScriptTimeZone(), "yyyy-MM-dd");
+        const y = tarikhDaftar.getFullYear();
+        const m = String(tarikhDaftar.getMonth() + 1).padStart(2, '0');
+        const d = String(tarikhDaftar.getDate()).padStart(2, '0');
+        tarikhDaftar = y + '-' + m + '-' + d;
+      } else if (typeof tarikhDaftar === 'number' && tarikhDaftar > 30000) {
+        const dt = new Date((tarikhDaftar - 25569) * 86400 * 1000);
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const d = String(dt.getDate()).padStart(2, '0');
+        tarikhDaftar = y + '-' + m + '-' + d;
       }
       let warganegara = row[15] ? row[15].toString().trim().toUpperCase() : 'MALAYSIA';
       let jenis = (warganegara && !warganegara.includes('MALAYSIA')) ? 'international' : 'local';
